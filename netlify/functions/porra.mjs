@@ -138,7 +138,11 @@ export default async (req) => {
       }
 
       const entry = { alias, picks: parsed.seats, createdAt: new Date().toISOString() };
-      await store.setJSON(key, entry);
+      // onlyIfNew: escritura atómica; si otro alias idéntico llegó a la vez, solo una gana.
+      const result = await store.setJSON(key, entry, { onlyIfNew: true });
+      if (result && result.modified === false) {
+        return json(409, { error: "Ese alias ya tiene papeleta sellada. Elige otro alias." });
+      }
       return json(201, { ok: true, entry });
     }
 
