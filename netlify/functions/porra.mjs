@@ -8,8 +8,6 @@
 //   ADMIN_KEY     (obligatoria) clave para lanzar el escrutinio
 //   DEADLINE_ISO  (opcional)    hora de cierre; por defecto 2026-11-28T00:00:00+01:00
 //   STORE_NAME    (opcional)    nombre del almacén; úsalo para pruebas (p. ej. "porra-pruebas")
-//   TEST_MODE     (opcional)    "true" SOLO en la web de pruebas: permite el escrutinio antes del cierre
-//                               y vaciar la urna (POST { action: "reset" }) con ADMIN_KEY
 
 import { getStore } from "@netlify/blobs";
 
@@ -91,7 +89,6 @@ async function loadVotes(store) {
 export default async (req) => {
   const store = getStore({ name: env("STORE_NAME") || DEFAULT_STORE, consistency: "strong" });
   const closed = Date.now() >= deadlineMs();
-  const testMode = env("TEST_MODE") === "true";
 
   try {
     // ---------- LECTURA ----------
@@ -100,14 +97,12 @@ export default async (req) => {
       const evaluation = await store.get("evaluation", { type: "json" });
       return json(200, {
         closed,
-        testMode,
         deadline: new Date(deadlineMs()).toISOString(),
         serverTime: new Date().toISOString(),
         count: votes.length,
-        // Hasta el cierre solo se publican los alias; las cifras viajan únicamente después
-        // (en la web de pruebas se muestran siempre, para poder revisar los datos).
+        // Hasta el cierre solo se publican los alias; las cifras viajan únicamente después.
         entries: votes.map((v) =>
-          closed || testMode
+          closed
             ? { alias: v.alias, createdAt: v.createdAt, picks: v.picks }
             : { alias: v.alias, createdAt: v.createdAt }
         ),
@@ -156,7 +151,7 @@ export default async (req) => {
       const adminKey = env("ADMIN_KEY");
       if (!adminKey) return json(500, { error: "Falta configurar ADMIN_KEY en Netlify" });
       if (String(body.adminKey || "") !== adminKey) return json(401, { error: "Clave de administrador incorrecta" });
-      if (!closed && !testMode) return json(403, { error: "El escrutinio se abre después del cierre" });
+      if (!closed) return json(403, { error: "El escrutinio se abre después del cierre" });
 
       const parsed = parseSeats(body.real);
       if (!parsed.ok) return json(400, { error: parsed.error });
@@ -192,19 +187,6 @@ export default async (req) => {
       const evaluation = { real, ranking, savedAt: new Date().toISOString() };
       await store.setJSON("evaluation", evaluation);
       return json(200, { ok: true, evaluation });
-    }
-
-    // ---------- VACIAR URNA (solo web de pruebas) ----------
-    if (body.action === "reset") {
-      if (!testMode) return json(403, { error: "Solo disponible en la web de pruebas" });
-      const adminKey = env("ADMIN_KEY");
-      if (!adminKey || String(body.adminKey || "") !== adminKey) {
-        return json(401, { error: "Clave de administrador incorrecta" });
-      }
-      const { blobs } = await store.list({ prefix: "vote:" });
-      await Promise.all(blobs.map((b) => store.delete(b.key)));
-      await store.delete("evaluation");
-      return json(200, { ok: true, deleted: blobs.length });
     }
 
     return json(400, { error: "Acción desconocida" });

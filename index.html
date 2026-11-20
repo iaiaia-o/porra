@@ -144,23 +144,12 @@
       transition: opacity 0.2s ease; z-index: 50; max-width: 90vw; text-align: center;
     }
     .toast.show { opacity: 1; }
-    .test-banner {
-      margin: -4px 0 10px; padding: 7px 10px; border-radius: 9px;
-      background: #eef4ff; color: #1d4ed8; border: 1px solid #c7d7fe;
-      font-size: 0.78rem; font-weight: 700;
-    }
-    .btn-danger {
-      width: 100%; margin-top: 10px; border: 1px solid #f9cdc9; border-radius: 12px;
-      background: var(--danger-soft); color: var(--danger); font-size: 0.9rem; font-weight: 700;
-      padding: 10px 14px; cursor: pointer;
-    }
     .hidden { display: none !important; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <header>
-      <div id="testBanner" class="test-banner hidden">🧪 WEB DE PRUEBAS · estos datos no cuentan para la porra real</div>
       <h1>🍲 La Porra del Cocido</h1>
       <p class="sub">Frente Amplio · PP · PSOE · Vox · Cierre: 27 nov, 24:00 (hora peninsular)</p>
 
@@ -238,7 +227,6 @@
         <label class="field-label" for="adminKeyInput" style="margin-top:14px;">Clave de administrador</label>
         <input id="adminKeyInput" type="password" autocomplete="off" placeholder="Solo para quien hace el recuento" />
         <button id="calcBtn" class="btn-primary" type="button">Calcular y publicar clasificación</button>
-        <button id="resetBtn" class="btn-danger hidden" type="button">Vaciar urna de pruebas</button>
       </div>
 
       <div class="card">
@@ -274,7 +262,6 @@
       clockOffset: 0,
       entries: [],
       evaluation: null,
-      testMode: false,
       busy: false
     };
 
@@ -330,8 +317,7 @@
         state.clockOffset = (Date.parse(data.serverTime) || Date.now()) - Date.now();
         state.entries = Array.isArray(data.entries) ? data.entries : [];
         state.evaluation = data.evaluation || null;
-        state.testMode = Boolean(data.testMode);
-        setSync(true, `${state.testMode ? "Urna de PRUEBAS" : "Urna compartida"} · ${state.entries.length} papeletas`);
+        setSync(true, `Urna compartida · ${state.entries.length} papeletas`);
         if (feedback) showToast("Urna actualizada");
       } catch {
         setSync(false, "Sin conexión con la urna · reintenta en unos segundos");
@@ -503,9 +489,7 @@
       const closed = isClosed();
       $("urnaHint").textContent = closed
         ? "Urna cerrada: estas son todas las papeletas con sus cifras."
-        : state.testMode
-          ? "Web de pruebas: las cifras se muestran siempre para poder revisarlas."
-          : "Las cifras permanecen ocultas hasta el cierre de la urna.";
+        : "Las cifras permanecen ocultas hasta el cierre de la urna.";
 
       if (!state.entries.length) {
         $("urnaList").innerHTML = `<p class="hint">Aún no hay papeletas selladas.</p>`;
@@ -547,38 +531,9 @@
     }
 
     function renderEscrutinioForm() {
-      const open = isClosed() || state.testMode;
-      $("escrutinioWaiting").classList.toggle("hidden", open);
-      $("escrutinioForm").classList.toggle("hidden", !open);
-      $("resetBtn").classList.toggle("hidden", !state.testMode);
-      $("testBanner").classList.toggle("hidden", !state.testMode);
-    }
-
-    // Vaciar urna (solo web de pruebas). Doble pulsación para confirmar, sin diálogos del navegador.
-    let resetArmed = false;
-    async function handleReset() {
-      const adminKey = $("adminKeyInput").value;
-      if (!adminKey) return showToast("Introduce la clave de administrador");
-      if (!resetArmed) {
-        resetArmed = true;
-        $("resetBtn").textContent = "Pulsa otra vez para vaciar la urna";
-        setTimeout(() => { resetArmed = false; $("resetBtn").textContent = "Vaciar urna de pruebas"; }, 4000);
-        return;
-      }
-      resetArmed = false;
-      $("resetBtn").textContent = "Vaciar urna de pruebas";
-      try {
-        const data = await api("POST", { action: "reset", adminKey });
-        try { localStorage.removeItem(RECEIPTS_KEY); } catch {}
-        renderReceipts();
-        realPrefilled = false;
-        PARTIES.forEach((p) => { $("real_" + p.id).value = 0; });
-        updateSums();
-        showToast(`Urna de pruebas vaciada (${data.deleted} papeletas)`);
-        await refreshState();
-      } catch (err) {
-        showToast(err.message || "No se pudo vaciar la urna");
-      }
+      const closed = isClosed();
+      $("escrutinioWaiting").classList.toggle("hidden", closed);
+      $("escrutinioForm").classList.toggle("hidden", !closed);
     }
 
     let realPrefilled = false;
@@ -652,7 +607,6 @@
 
     $("saveVoteBtn").addEventListener("click", handleSaveVote);
     $("calcBtn").addEventListener("click", handleCalc);
-    $("resetBtn").addEventListener("click", handleReset);
     $("refreshBtn").addEventListener("click", () => refreshState(true));
 
     renderInputs();
